@@ -11,6 +11,7 @@ import numpy as np
 import gc
 import collections
 import functools
+import math
 
 POLY_COUNT = 371
 RGBA_GAUSS_VALUE = 25.6
@@ -306,8 +307,21 @@ def anneal(solution, fitness, mutate, temperature, time, stop):
         current_temperature = temperature(i)
         new_solution = mutate(solution)
         new_fitness = fitness(new_solution)
-        if new_fitness > current_fitness or current_temperature > random.random():
+        accepted = (
+            new_fitness > current_fitness or 
+            math.exp(
+                (current_fitness - new_fitness) / current_temperature
+            ) > random.random()
+        )
+        if accepted:
             current_fitness = new_fitness
             solution = new_solution
         if stop(time, current_temperature, current_fitness):
             return i, solution
+
+
+def temperature_factory(sigma=4, initial=1.5):
+    k = sum(9 * .1 ** (i + 1) for i in xrange(sigma))
+    def temperature(time):
+        return initial * k ** time
+    return temperature
