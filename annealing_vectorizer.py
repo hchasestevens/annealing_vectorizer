@@ -9,6 +9,8 @@ import itertools
 import random
 import numpy as np
 import gc
+import collections
+import functools
 
 POLY_COUNT = 371
 RGBA_GAUSS_VALUE = 25.6
@@ -130,9 +132,9 @@ def mutate(polygons,gauss):
 
 def random_polygon():
     return {'rgb':map(lambda x: random.randint(0,255), range(3)),
-                       'alpha':random.randint(0,255),
-                       'coords':map(lambda x: [random.randint(0,width),random.randint(0,height)], range(3))
-                       }
+            'alpha':random.randint(0,255),
+            'coords':map(lambda x: [random.randint(0,width),random.randint(0,height)], range(3))
+            }
 
 def gen_parent():
     parent = list()
@@ -220,3 +222,92 @@ try:
 except Exception as e:
     print type(e), e
     raw_input()
+
+
+# New code starts here:
+
+
+# General functions:
+
+def compose(*fns):
+    return reduce(lambda x, y: lambda z: x(y(z)), fns)
+
+
+def int_clip(max_, val):
+    return int(min(max(round(val), 0), max_))
+
+
+# Solutions:
+
+Polygon = collections.namedtuple('Polygon', 'rgb alpha coordinates')
+
+def new_polygon(width, height):
+    return Polygon(
+        rgb=tuple(random.randint(0, 255) for __ in xrange(3)),
+        alpha=random.randint(0, 255),
+        coordinates=tuple(
+            (random.randint(0, width), random.randint(0, height))
+            for __ in 
+            xrange(3)
+        )
+    )
+
+
+def new_solution(num_polygons, width, height):
+    return tuple(new_polygon(width, height) for __ in xrange(num_polygons))
+
+
+def mutate_factory(mutation_probability, gauss_sigma, width, height):
+    gauss_factory = lambda max_: lambda x: random.gauss(x, gauss_sigma * max_)
+    value_mutate_factory = lambda max_: compose(
+        functools.partial(int_clip, max_), 
+        gauss_factory(max_)
+    )
+
+    rgb_mutate = value_mutate_factory(255)
+    width_mutate = value_mutate_factory(width)
+    height_mutate = value_mutate_factory(height)
+
+    def mutate():
+        return mutation_probability > random.random()
+
+    def mutate_polygon(polygon):
+        rgb = tuple(
+            rgb_mutate(value) if mutate() else value
+            for value in
+            polygon.rgb
+        )
+        alpha = rgb_mutate(polygon.alpha) if mutate() else polygon.alpha
+        coordinates = tuple(
+            (
+                width_mutate(width) if mutate() else width,
+                height_mutate(height) if mutate() else height
+            )
+            for width, height in
+            polygon.coordinates
+        )
+        return Polygon(rgb, alpha, coordinates)
+
+    def mutate_solution(solution):
+        return tuple(
+            mutate_polygon(polygon)
+            for polygon in
+            solution
+        )
+
+    return mutate_solution
+
+
+# Simulated annealing:
+
+def anneal(solution, fitness, mutate, temperature, time, stop):
+    current_fitness = fitness(solution)
+    for i in itertools.count(time + 1):
+        current_temperature = temperature(i)
+        new_solution = mutate(solution)
+        new_fitness = fitness(new_solution)
+        if new_fitness > current_fitness or current_temperature > random.random():
+            current_fitness = new_fitness
+            solution = new_solution
+        if stop(time, current_temperature, current_fitness):
+            return i, solution
