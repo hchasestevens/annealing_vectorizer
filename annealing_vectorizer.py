@@ -238,6 +238,19 @@ def int_clip(max_, val):
     return int(min(max(round(val), 0), max_))
 
 
+def cached(f):
+    cache = {}
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        key = (args, frozenset(x.iteritems()))
+        result = cache.get(key, None)
+        if result is None:
+            result = f(*args, **kwargs)
+            cache[key] = result
+        return result
+    return wrapper
+
+
 # Solutions:
 
 Polygon = collections.namedtuple('Polygon', 'rgb alpha coordinates')
@@ -325,3 +338,43 @@ def temperature_factory(sigma=4, initial=1.5):
     def temperature(time):
         return initial * k ** time
     return temperature
+
+
+# Objective function
+
+def create_image_factory(width, height):
+    def new_image(mode, *args, **kwargs):
+        return Image.new(mode, (width, height), *args, **kwargs)
+
+    @cached
+    def create_layer(polygon):
+        layer = ImageDraw.Draw(new_image('RGB'))
+        layer.polygon(polygon.coordinates, fill=polygon.rgb)
+        return layer
+
+    @cached
+    def create_mask(polygon):
+        mask = ImageDraw.Draw(new_image('L'))
+        mask.polygon(polygon.coordinates, fill=polygon.alpha)
+        return mask
+
+    def create_image(polygons):
+        image = new_image('RGB', 'white')
+        for polygon in polygons:
+            image.paste(create_layer(polygon), (0, 0), create_mask(polygon))
+        return image
+
+    return create_image
+
+
+def fitness_factory(create_image, target):
+    target_data = np.array([pixel for row in target.getdata() for pixel in row], np.int16)
+    width, height = target.size
+    area = float(width * height)
+
+    def fitness(polygons):
+        image = create_image(polygons)
+        image_data = np.array([color for row in image.getdata() for color in row], np.int16)
+        return ((target_data - image_data) ** 2).mean() / area
+
+    return fitness
